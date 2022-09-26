@@ -1,0 +1,200 @@
+package com.cursosandroidant.fundamentoscorrutinas
+
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.produce
+import java.util.concurrent.TimeoutException
+
+/****
+ * Project: Fundamentos Corrutinas
+ * From: com.cursosandroidant.fundamentoscorrutinas
+ * Created by Alain Nicolás Tello on 07/09/21 at 9:17
+ * All rights reserved 2021.
+ *
+ * All my Udemy Courses:
+ * https://www.udemy.com/user/alain-nicolas-tello/
+ * Web: www.alainnicolastello.com
+ ***/
+val countries = listOf("Santander", "CDMX", "Lima", "Buenos Aires", "Alicante")
+
+fun main() {
+    //basicChannel()
+    //closeChannel()
+    //produceChannel()
+    //pipelines()
+    //bufferChannel()
+    exceptions()
+    readLine()
+}
+
+fun exceptions() {
+    val exceptionHandler = CoroutineExceptionHandler { coroutineContext, throwable ->
+        println("Notifica al programador... $throwable in $coroutineContext")
+
+        if (throwable is ArithmeticException) println("Mostrar mensaje de reintentar...")
+        println()
+    }
+
+    runBlocking {
+        newTopic("Manejo de excepciones")
+        launch {
+            try {
+                delay(100)
+                //throw Exception()
+            } catch (e: Exception){
+                e.printStackTrace()
+            }
+        }
+
+        val globalScope = CoroutineScope(Job() + exceptionHandler)
+        globalScope.launch {
+            delay(200)
+            throw TimeoutException()
+        }
+
+        CoroutineScope(Job() + exceptionHandler).launch {
+            val result = async {
+                delay(500)
+                multiLambda(2, 3){
+                    if (it > 5) throw ArithmeticException()
+                }
+            }
+            println("Result: ${result.await()}")
+        }
+
+        val channel = Channel<String>()
+        CoroutineScope(Job()).launch(exceptionHandler) {
+            delay(800)
+            countries.forEach {
+                channel.send(it)
+                if (it.equals("Lima")) channel.close()
+            }
+        }
+        channel.consumeEach { println(it) }
+    }
+}
+
+fun bufferChannel() {
+    runBlocking {
+        newTopic("Buffer para channels")
+        val time = System.currentTimeMillis()
+        val channel = Channel<String>()
+        launch {
+            countries.forEach {
+                delay(100)
+                channel.send(it)
+            }
+            channel.close()
+        }
+        launch {
+            delay(1_000)
+            channel.consumeEach { println(it) }
+            println("Time: ${System.currentTimeMillis() - time}ms")
+        }
+
+        val bufferTime = System.currentTimeMillis()
+        val bufferChannel = Channel<String>(2)
+        launch {
+            countries.forEach {
+                delay(100)
+                bufferChannel.send(it)
+            }
+            bufferChannel.close()
+        }
+        launch {
+            delay(1_000)
+            bufferChannel.consumeEach { println(it) }
+            println("B -> Time: ${System.currentTimeMillis() - bufferTime}ms")
+        }
+    }
+}
+
+fun pipelines() {
+    runBlocking {
+        newTopic("Pipelines")
+        val citiesChannel = produceCities()
+        val foodsChannel = produceFoods(citiesChannel)
+        foodsChannel.consumeEach { println(it) }
+        citiesChannel.cancel()
+        foodsChannel.cancel()
+        println("Todo esta  10/10")
+    }
+}
+fun CoroutineScope.produceFoods(cities: ReceiveChannel<String>): ReceiveChannel<String> = produce {
+    for (city in cities){
+        val food = getFoodByCity(city)
+        send("$food desde $city")
+    }
+}
+
+suspend fun getFoodByCity(city: String): String {
+    delay(300)
+    return when(city){
+        "Santander" -> "Arepa"
+        "CDMX" -> "Taco"
+        "Lima" -> "Ceviche"
+        "Buenos Aires" -> "Milanesa"
+        "Alicante" -> "Paella"
+        else -> "Sin datos"
+    }
+}
+
+fun produceChannel() {
+    runBlocking {
+        newTopic("Canales y el patrón productor-consumidor")
+        val names = produceCities()
+        names.consumeEach { println(it) }
+    }
+}
+fun CoroutineScope.produceCities(): ReceiveChannel<String> = produce {
+    countries.forEach {
+        send(it)
+    }
+}
+
+fun closeChannel() {
+    runBlocking {
+        newTopic("Cerrar un canal")
+        val channel = Channel<String>()
+        launch {
+            countries.forEach {
+                channel.send(it)
+                //if (it.equals("Lima")) channel.close()
+                if (it.equals("Lima")){
+                    channel.close()
+                    return@launch
+                }
+            }
+            //channel.close()
+        }
+
+        /*for (value in channel){
+            println(value)
+        }*/
+        while (!channel.isClosedForReceive){
+            println(channel.receive())
+        }
+        //channel.consumeEach { println(it) }
+    }
+}
+
+fun basicChannel() {
+    runBlocking {
+        newTopic("Canal básico")
+        val channel = Channel<String>()
+        launch {
+            countries.forEach {
+                channel.send(it)
+            }
+        }
+
+        /*repeat(5){
+            println(channel.receive())
+        }*/
+        for (value in channel){
+            println(value)
+        }
+    }
+}
